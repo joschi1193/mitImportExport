@@ -1,0 +1,4 @@
+enum ExportFormat {
+  xml,
+  pdf,
+}
