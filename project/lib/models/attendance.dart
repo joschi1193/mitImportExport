@@ -1,8 +1,4 @@
-enum AttendanceStatus {
-  present,
-  late,
-  absent
-}
+enum AttendanceStatus { present, late, absent }
 
 class Attendance {
   final String name;
@@ -15,7 +11,7 @@ class Attendance {
     required this.name,
     required this.date,
     required this.status,
-    this.baseFine = 15.0,
+    required this.baseFine,
     this.averageFine = 0.0,
   });
 
@@ -33,11 +29,26 @@ class Attendance {
     return Attendance(
       name: json['name'],
       date: DateTime.parse(json['date']),
-      status: AttendanceStatus.values.firstWhere(
-        (e) => e.toString() == json['status'],
-      ),
+      status: _parseAttendanceStatus(json['status']),
       baseFine: json['baseFine'] ?? 15.0,
       averageFine: json['averageFine'] ?? 0.0,
     );
+  }
+
+  static AttendanceStatus _parseAttendanceStatus(String statusStr) {
+    // Entferne "AttendanceStatus." vom String, falls vorhanden
+    final cleanStatus = statusStr.replaceAll('AttendanceStatus.', '');
+
+    // Konvertiere zu lowercase für case-insensitive Vergleiche
+    switch (cleanStatus.toLowerCase()) {
+      case 'present':
+        return AttendanceStatus.present;
+      case 'late':
+        return AttendanceStatus.late;
+      case 'absent':
+        return AttendanceStatus.absent;
+      default:
+        return AttendanceStatus.absent; // Fallback für unbekannte Werte
+    }
   }
 }

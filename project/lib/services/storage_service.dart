@@ -13,7 +13,7 @@ class StorageService {
   static const String _finesKey = 'fines';
   static const String _attendanceKey = 'attendance';
   static const String _overpaymentsKey = 'overpayments';
-  static const String _calendarEventsKey = 'calendar_events';
+  static const String _calendarEventsKey = 'Termine';
 
   late final SharedPreferences _prefs;
 
@@ -98,7 +98,6 @@ class StorageService {
     return json.map((key, value) => MapEntry(key, (value as num).toDouble()));
   }
 
-  // Calendar Events
   Future<void> saveCalendarEvents(Map<String, List<String>> events) async {
     await _prefs.setString(_calendarEventsKey, jsonEncode(events));
   }

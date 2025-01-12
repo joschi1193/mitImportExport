@@ -23,6 +23,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = false;
   int _selectedIndex = -1;
 
+  Future<void> _resetData(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Daten zurücksetzen'),
+        content: const Text(
+          'Möchtest du wirklich alle Strafen, Anwesenheiten und Überzahlungen zurücksetzen? '
+          'Die Namen und vordefinierten Strafen bleiben erhalten.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('Zurücksetzen'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final appData = Provider.of<AppDataProvider>(context, listen: false);
+
+      // Setze die Daten zurück, aber behalte Namen und vordefinierte Strafen
+      await appData.resetData();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Alle Daten wurden zurückgesetzt'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -42,6 +82,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildNavItem(2, 'Bis 01.2025', Icons.account_balance),
                 _buildNavItem(3, 'Kalender', Icons.calendar_today),
                 _buildNavItem(4, 'Daten', Icons.storage),
+                _buildNavItem(5, 'Zurücksetzen', Icons.restore),
               ],
             ),
           ),
@@ -92,6 +133,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return const _CalendarTab();
       case 4:
         return _DataTab();
+      case 5:
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                'Hier kannst du alle Daten zurücksetzen.\n'
+                'Die Namen und vordefinierten Strafen bleiben erhalten.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => _resetData(context),
+                style: ElevatedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.red,
+                ),
+                child: const Text('Daten zurücksetzen'),
+              ),
+            ],
+          ),
+        );
       default:
         return const Center(
           child: Text('Bitte wähle eine Option aus'),
@@ -646,68 +710,6 @@ class _DataTab extends StatefulWidget {
 class _DataTabState extends State<_DataTab> {
   bool _isLoading = false;
 
-  Future<void> _showResetConfirmationDialog(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Spiel zurücksetzen'),
-        content: const Text(
-          'Möchten Sie wirklich alle Strafen und Werte zurücksetzen? '
-          'Die Namen und vordefinierten Strafen bleiben erhalten. '
-          'Diese Aktion kann nicht rückgängig gemacht werden!',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Abbrechen'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.red,
-            ),
-            child: const Text('Zurücksetzen'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      final appData = Provider.of<AppDataProvider>(context, listen: false);
-      setState(() => _isLoading = true);
-
-      try {
-        await appData.resetGameData();
-        if (!context.mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Spiel wurde erfolgreich zurückgesetzt'),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Erzwinge einen Rebuild der App
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const SettingsScreen()),
-        );
-      } catch (e) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Fehler beim Zurücksetzen des Spiels'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final appData = Provider.of<AppDataProvider>(context);
@@ -726,7 +728,6 @@ class _DataTabState extends State<_DataTab> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 24),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _isLoading
@@ -822,36 +823,6 @@ class _DataTabState extends State<_DataTab> {
               const SizedBox(height: 24),
               const Text(
                 'Hinweis: Der Export erstellt eine JSON-Datei mit allen App-Daten, die Sie auf anderen Geräten importieren können.',
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                'Spiel zurücksetzen',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: _isLoading
-                    ? null
-                    : () => _showResetConfirmationDialog(context),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Neues Spiel starten'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.all(16),
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Hinweis: Diese Aktion setzt alle Strafen und Werte zurück. '
-                'Namen und vordefinierte Strafen bleiben erhalten.',
                 style: TextStyle(
                   color: Colors.grey,
                   fontSize: 14,

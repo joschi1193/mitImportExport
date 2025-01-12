@@ -19,63 +19,71 @@ class DataExportService {
     required Settings settings,
     required List<Attendance> attendance,
     required Map<String, double> overpayments,
+    Map<String, dynamic>? calendarEvents,
   }) async {
     try {
-      // Hole alle gespeicherten Daten aus SharedPreferences
+      // Hole die SharedPreferences Instanz
       final prefs = await SharedPreferences.getInstance();
-      final allKeys = prefs.getKeys();
-      final allStoredData = <String, dynamic>{};
 
-      for (final key in allKeys) {
-        final value = prefs.get(key);
-        if (value != null) {
-          try {
-            // Versuche den Wert als JSON zu parsen
-            allStoredData[key] = jsonDecode(value.toString());
-          } catch (e) {
-            // Wenn der Wert kein JSON ist, speichere ihn direkt
-            allStoredData[key] = value;
-          }
-        }
+      // Lade die Kalenderdaten
+      final calendarEventsString = prefs.getString('Termine');
+      Map<String, dynamic> calendarData = {};
+      if (calendarEventsString != null) {
+        calendarData = jsonDecode(calendarEventsString);
       }
 
-      // Berechne zusätzliche statistische Daten
-      final statistics = _calculateStatistics(fines);
+      // Lade die gespeicherten Strafen
+      final storedFinesString = prefs.getString('fines');
+      List<Fine> allFines = fines;
+      if (storedFinesString != null) {
+        final List<dynamic> storedFines = jsonDecode(storedFinesString);
+        allFines = storedFines.map((json) => Fine.fromJson(json)).toList();
+      }
+
+      // Lade die gespeicherte Anwesenheit
+      final storedAttendanceString = prefs.getString('attendance');
+      List<Attendance> allAttendance = attendance;
+      if (storedAttendanceString != null) {
+        final List<dynamic> storedAttendance =
+            jsonDecode(storedAttendanceString);
+        allAttendance =
+            storedAttendance.map((json) => Attendance.fromJson(json)).toList();
+      }
+
+      // Lade die gespeicherten Überzahlungen
+      final storedOverpaymentsString = prefs.getString('overpayments');
+      Map<String, double> allOverpayments = overpayments;
+      if (storedOverpaymentsString != null) {
+        final Map<String, dynamic> storedOverpayments =
+            jsonDecode(storedOverpaymentsString);
+        allOverpayments = storedOverpayments
+            .map((key, value) => MapEntry(key, (value as num).toDouble()));
+      }
 
       final data = {
         'metadata': {
           'version': '1.0',
           'timestamp': DateTime.now().toIso8601String(),
           'type': 'full_backup',
-          'appVersion': '1.0.0', // Füge die App-Version hinzu
+          'appVersion': '1.0.0',
         },
         'data': {
-          // Hauptdaten
-          'fines': fines.map((f) => f.toJson()).toList(),
+          'fines': allFines.map((f) => f.toJson()).toList(),
           'players': players.map((p) => p.toJson()).toList(),
           'predefinedFines': predefinedFines.map((pf) => pf.toJson()).toList(),
           'settings': settings.toJson(),
-          'attendance': attendance.map((a) => a.toJson()).toList(),
-          'overpayments': overpayments,
-
-          // Zusätzliche Daten
-          'statistics': statistics,
-          'storedData': allStoredData,
-
-          // Kalender-Events
-          'calendarEvents': allStoredData['calendar_events'] ?? {},
-
-          // Berechnete Summen
-          'totalFines': fines.fold(0.0, (sum, fine) => sum + fine.amount),
-          'totalPaid': fines
+          'attendance': allAttendance.map((a) => a.toJson()).toList(),
+          'overpayments': allOverpayments,
+          'calendarEvents': calendarData,
+          'statistics': _calculateStatistics(allFines),
+          'totalFines': allFines.fold(0.0, (sum, fine) => sum + fine.amount),
+          'totalPaid': allFines
               .where((f) => f.isPaid)
               .fold(0.0, (sum, fine) => sum + fine.amount),
-          'totalUnpaid': fines
+          'totalUnpaid': allFines
               .where((f) => !f.isPaid)
               .fold(0.0, (sum, fine) => sum + fine.amount),
-
-          // Anwesenheitsstatistiken
-          'attendanceStats': _calculateAttendanceStats(attendance),
+          'attendanceStats': _calculateAttendanceStats(allAttendance),
         }
       };
 
@@ -161,6 +169,7 @@ class DataExportService {
 
   Future<Map<String, dynamic>> importData(String jsonString) async {
     try {
+      debugPrint('Starting import...');
       final data = jsonDecode(jsonString);
 
       if (data['metadata'] == null || data['data'] == null) {
@@ -194,35 +203,36 @@ class DataExportService {
       // Konvertiere die Hauptdaten
       final settings =
           Settings.fromJson(Map<String, dynamic>.from(backupData['settings']));
-
       final players = (backupData['players'] as List)
           .map((p) => Player.fromJson(Map<String, dynamic>.from(p)))
           .toList();
-
       final predefinedFines = (backupData['predefinedFines'] as List)
           .map((pf) => PredefinedFine.fromJson(Map<String, dynamic>.from(pf)))
           .toList();
-
       final fines = (backupData['fines'] as List)
           .map((f) => Fine.fromJson(Map<String, dynamic>.from(f)))
           .toList();
-
       final attendance = (backupData['attendance'] as List)
           .map((a) => Attendance.fromJson(Map<String, dynamic>.from(a)))
           .toList();
 
-      final overpayments = Map<String, double>.from(
-          (backupData['overpayments'] as Map).map((key, value) =>
-              MapEntry(key.toString(), (value as num).toDouble())));
-
-      // Kalender-Events importieren
-      if (backupData['calendarEvents'] != null) {
-        final calendarEvents = Map<String, List<String>>.from(
-            (backupData['calendarEvents'] as Map).map((key, value) => MapEntry(
-                key.toString(),
-                (value as List).map((e) => e.toString()).toList())));
-        await prefs.setString('calendar_events', jsonEncode(calendarEvents));
+      // Sicheres Parsen der Überzahlungen
+      Map<String, double> overpayments = {};
+      if (backupData['overpayments'] != null) {
+        final overpaymentData =
+            backupData['overpayments'] as Map<String, dynamic>;
+        overpayments = overpaymentData.map((key, value) => MapEntry(key,
+            (value is int) ? value.toDouble() : (value as num).toDouble()));
       }
+
+      // Kalender-Events direkt aus den Hauptdaten importieren
+      final calendarEvents = backupData['calendarEvents'] != null
+          ? Map<String, List<String>>.from((backupData['calendarEvents'] as Map)
+              .map((key, value) => MapEntry(
+                    key,
+                    (value as List).cast<String>(),
+                  )))
+          : <String, List<String>>{};
 
       return {
         'settings': settings,
@@ -231,6 +241,7 @@ class DataExportService {
         'fines': fines,
         'attendance': attendance,
         'overpayments': overpayments,
+        'calendarEvents': calendarEvents,
       };
     } catch (e) {
       debugPrint('Error importing data: $e');

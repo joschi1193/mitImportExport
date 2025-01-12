@@ -17,6 +17,7 @@ class AppDataProvider extends ChangeNotifier {
   List<Fine> _fines = [];
   List<Attendance> _attendance = [];
   Map<String, double> _overpayments = {};
+  Map<String, List<String>> _calendarEvents = {};
 
   AppDataProvider(this.storageService) {
     _loadData();
@@ -32,6 +33,8 @@ class AppDataProvider extends ChangeNotifier {
   List<Fine> get fines => List.unmodifiable(_fines);
   List<Attendance> get attendance => List.unmodifiable(_attendance);
   Map<String, double> get overpayments => Map.unmodifiable(_overpayments);
+  Map<String, List<String>> get calendarEvents =>
+      Map.unmodifiable(_calendarEvents);
 
   bool isGuest(String name) {
     return _players.any((p) => p.name == name && p.isGuest);
@@ -62,21 +65,53 @@ class AppDataProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> resetGameData() async {
-    // Setze Strafen zurück
-    _fines = [];
-    await storageService.saveFines(_fines);
-
-    // Setze Anwesenheit zurück
-    _attendance = [];
-    await storageService.saveAttendance(_attendance);
-
-    // Setze Überzahlungen zurück
-    _overpayments = {};
-    await storageService.saveOverpayments(_overpayments);
-
-    // Benachrichtige alle Listener über die Änderungen
+  Future<void> updateCalendarEvents(Map<String, List<String>> events) async {
+    _calendarEvents = events;
+    await storageService.saveCalendarEvents(events);
     notifyListeners();
+  }
+
+  Future<void> resetData() async {
+    try {
+      // Speichere die aktuellen Namen und vordefinierten Strafen
+      final currentPlayers = List<Player>.from(_players);
+      final currentPredefinedFines =
+          List<PredefinedFine>.from(_predefinedFines);
+
+      // Setze alle Datenstrukturen auf ihre Standardwerte
+      _fines = [];
+      _attendance = [];
+      _overpayments = {};
+      _calendarEvents = {};
+      _settings = const Settings(
+        baseFineAmount: 15.0, // Standardwert für Grundbetrag
+        previousYearsBalance: 0.0, // Setze Kassenstand auf 0
+      );
+
+      // Stelle die Namen und vordefinierten Strafen wieder her
+      _players = currentPlayers;
+      _predefinedFines = currentPredefinedFines;
+
+      // Speichere den neuen Zustand
+      await Future.wait([
+        storageService.saveFines([]), // Leere Liste für Strafen
+        storageService.saveAttendance([]), // Leere Liste für Anwesenheit
+        storageService.saveOverpayments({}), // Leere Map für Überzahlungen
+        storageService.saveCalendarEvents({}), // Leere Map für Kalendereinträge
+        storageService.saveSettings(_settings), // Neue Settings
+        storageService.savePlayers(_players), // Behalte die Spieler
+        storageService.savePredefinedFines(
+            _predefinedFines), // Behalte die vordefinierten Strafen
+      ]);
+
+      // Lade die Daten neu, um sicherzustellen, dass alles korrekt zurückgesetzt wurde
+      await _loadData();
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error resetting data: $e');
+      rethrow;
+    }
   }
 
   Future<void> updateBaseFineAmount(double amount) async {
@@ -120,6 +155,7 @@ class AppDataProvider extends ChangeNotifier {
         settings: _settings,
         attendance: _attendance,
         overpayments: _overpayments,
+        calendarEvents: _calendarEvents,
       );
     } catch (e) {
       debugPrint('Error exporting data: $e');
@@ -132,39 +168,49 @@ class AppDataProvider extends ChangeNotifier {
       debugPrint('Starting import...');
       final importedData = await _dataExportService.importData(jsonString);
 
-      // Aktualisiere zuerst die lokalen Variablen
-      _settings = importedData['settings'] as Settings;
-      _players = importedData['players'] as List<Player>;
-      _predefinedFines =
+      // Speichere die importierten Daten temporär
+      final newSettings = importedData['settings'] as Settings;
+      final newPlayers = importedData['players'] as List<Player>;
+      final newPredefinedFines =
           importedData['predefinedFines'] as List<PredefinedFine>;
-      _fines = importedData['fines'] as List<Fine>;
-      _attendance = importedData['attendance'] as List<Attendance>;
-      _overpayments = importedData['overpayments'] as Map<String, double>;
+      final newFines = importedData['fines'] as List<Fine>;
+      final newAttendance = importedData['attendance'] as List<Attendance>;
+      final newOverpayments =
+          importedData['overpayments'] as Map<String, double>;
+      final newCalendarEvents =
+          importedData['calendarEvents'] as Map<String, List<String>>;
 
-      // Benachrichtige Listener SOFORT nach der Aktualisierung der Variablen
-      notifyListeners();
-
-      // Dann lösche die existierenden Daten
+      // Lösche alle existierenden Daten
       await storageService.clearAllData();
 
-      // Und speichere die neuen Daten
+      // Speichere die neuen Daten
       await Future.wait([
-        storageService.saveSettings(_settings),
-        storageService.savePlayers(_players),
-        storageService.savePredefinedFines(_predefinedFines),
-        storageService.saveFines(_fines),
-        storageService.saveAttendance(_attendance),
-        storageService.saveOverpayments(_overpayments),
+        storageService.saveSettings(newSettings),
+        storageService.savePlayers(newPlayers),
+        storageService.savePredefinedFines(newPredefinedFines),
+        storageService.saveFines(newFines),
+        storageService.saveAttendance(newAttendance),
+        storageService.saveOverpayments(newOverpayments),
+        storageService.saveCalendarEvents(newCalendarEvents),
       ]);
 
-      debugPrint('Import completed successfully');
+      // Aktualisiere die lokalen Variablen
+      _settings = newSettings;
+      _players = newPlayers;
+      _predefinedFines = newPredefinedFines;
+      _fines = newFines;
+      _attendance = newAttendance;
+      _overpayments = newOverpayments;
+      _calendarEvents = newCalendarEvents;
+
+      debugPrint('\n=== IMPORT STATE DEBUG ===');
       debugPrint('Players: ${_players.length}');
       debugPrint('Fines: ${_fines.length}');
       debugPrint('Attendance: ${_attendance.length}');
       debugPrint('PredefinedFines: ${_predefinedFines.length}');
       debugPrint('Overpayments: ${_overpayments.length}');
+      debugPrint('=====================\n');
 
-      // Benachrichtige Listener nochmal nach dem Speichern
       notifyListeners();
     } catch (e) {
       debugPrint('Error importing data: $e');
@@ -172,7 +218,6 @@ class AppDataProvider extends ChangeNotifier {
     }
   }
 
-  // Private methods
   Future<void> _loadData() async {
     _settings = await storageService.loadSettings();
     _players = await storageService.loadPlayers();
@@ -180,6 +225,7 @@ class AppDataProvider extends ChangeNotifier {
     _fines = await storageService.loadFines();
     _attendance = await storageService.loadAttendance();
     _overpayments = await storageService.loadOverpayments();
+    _calendarEvents = await storageService.loadCalendarEvents();
     notifyListeners();
   }
 }
